@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strconv"
+	//"strconv"
 )
 
 const (
@@ -28,7 +28,7 @@ func byteSize(size int) string {
 	var result int
 
 	if size % 1024 != 0 || size < 1024 {
-		return fmt.Sprintf("%dkB", size)
+		return fmt.Sprintf("%dKB", size)
 	}
 
 	result = size / 1024
@@ -48,14 +48,19 @@ func byteSize(size int) string {
 
 func main() {
 	ConnectionNum := flag.Int("connectionNum", 0, "Maximum number of PostgreSQL client connections")
-	CPUNum := flag.Int("cpuNum", 0, "Number of CPUs, which PostgreSQL can use\nCPUs = threads per core * cores per socket * sockets")
-	DBType := flag.String("dbType", DB_TYPE_WEB, "What type of application is PostgreSQL leveraged for")
+	CPUNum := flag.Int("cpuNum", 0, "Number of CPUs, which PostgreSQL can leverage\nCPUs = threads per core * cores per socket * sockets")
+	DBType := flag.String("dbType", DB_TYPE_WEB, "What type of application PostgreSQL is installed for")
 	DBVersion := flag.String("dbVersion", DEFAULT_DB_VERSION, "PostgreSQL version (find out via 'SELECT version();')")
 	HDType := flag.String("hdType", HARD_DRIVE_SSD, "Type of data storage device")
 	OSType := flag.String("osType", OS_LINUX, "Operating system of the PostgreSQL server host")
 	TotalMemory := flag.Int("totalMemory", 0, "How much memory can PostgreSQL take advantage of")
 	TotalMemoryUnit := flag.String("totalMemoryUnit", SIZE_UNIT_GB, "Memory unit")
 	flag.Parse()
+
+	if *ConnectionNum > 0 {
+		fmt.Println("# Connection num:", *ConnectionNum)
+	}
+
 	fmt.Println("# CPUs num:", *CPUNum)
 	fmt.Println("# Data Storage:", *HDType)
 	fmt.Println("# DB Type:", *DBType)
@@ -64,9 +69,9 @@ func main() {
 	fmt.Println("# Total Memory (RAM):", *TotalMemory, *TotalMemoryUnit)
 	fmt.Println("")
 
-	if *ConnectionNum > 0 {
-		fmt.Println("# Connection num:", *ConnectionNum)
-	}
+	//if *ConnectionNum > 0 {
+	//	fmt.Println("# Connection num:", *ConnectionNum)
+	//}
 
 	//fmt.Println("# Data Storage:", *HDType)
 	//mt.Println("")
@@ -79,7 +84,6 @@ func main() {
 	}
 
 	var FinalConnectionNum int
-
 	if *ConnectionNum < 1 {
 		CONNECTION_NUM_MAP := map[string]int {
 			DB_TYPE_DESKTOP: 10,
@@ -96,7 +100,6 @@ func main() {
 
 	totalMemoryInBytes := *TotalMemory * SIZE_UNIT_MAP[*TotalMemoryUnit]
 	totalMemoryInKb := totalMemoryInBytes / SIZE_UNIT_MAP["KB"]
-
 	var sharedBuffers int
 	SHARED_BUFFERS_VALUE_MAP := map[string]int {
 		DB_TYPE_DESKTOP: totalMemoryInKb / 16,
@@ -108,19 +111,19 @@ func main() {
 	sharedBuffers = SHARED_BUFFERS_VALUE_MAP[*DBType]
 
 	// Limit shared_buffers to 512MB on Windows
-	winMemoryLimit := 512 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]
-	if OS_WINDOWS == *OSType && sharedBuffers > winMemoryLimit {
-		sharedBuffers = winMemoryLimit
-	}
+	//winMemoryLimit := 512 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]
+	//if OS_WINDOWS == *OSType && sharedBuffers > winMemoryLimit {
+	//	sharedBuffers = winMemoryLimit
+	//}
 	//fmt.Println("shared_buffers", "=", byteSize(sharedBuffers))
 
 	var effectiveCacheSize int
 	EFFECTIVE_CACHE_SIZE_MAP := map[string]int {
 		DB_TYPE_DESKTOP: totalMemoryInKb / 4,
-		DB_TYPE_DW:      totalMemoryInKb * 3 / 4,
-		DB_TYPE_MIXED:   totalMemoryInKb * 3 / 4,
-		DB_TYPE_OLTP:    totalMemoryInKb * 3 / 4,
-		DB_TYPE_WEB:     totalMemoryInKb * 3 / 4,
+		DB_TYPE_DW:      (totalMemoryInKb * 3) / 4,
+		DB_TYPE_MIXED:   (totalMemoryInKb * 3) / 4,
+		DB_TYPE_OLTP:    (totalMemoryInKb * 3) / 4,
+		DB_TYPE_WEB:     (totalMemoryInKb * 3) / 4,
 	}
 	effectiveCacheSize = EFFECTIVE_CACHE_SIZE_MAP[*DBType]
 	//fmt.Println("effective_cache_size", "=", byteSize(effectiveCacheSize))
@@ -141,15 +144,15 @@ func main() {
 	}
 	//fmt.Println("maintenance_work_mem", "=", byteSize(maintenanceWorkMem))
 
-	DBVersionFloat, _ := strconv.ParseFloat(*DBVersion, 32)
+	//DBVersionFloat, _ := strconv.ParseFloat(*DBVersion, 32)
 
 	var checkpointCompletionTarget float32
-	CHECKPOINT_COMPLETION_TARGET_MAP := map[string]float32{
-		DB_TYPE_WEB:     0.7,
-		DB_TYPE_OLTP:    0.9,
-		DB_TYPE_DW:      0.9,
+	CHECKPOINT_COMPLETION_TARGET_MAP := map[string]float32 {
 		DB_TYPE_DESKTOP: 0.5,
+		DB_TYPE_DW:      0.9,
 		DB_TYPE_MIXED:   0.9,
+		DB_TYPE_OLTP:    0.9,
+		DB_TYPE_WEB:     0.7,
 	}
 	checkpointCompletionTarget = CHECKPOINT_COMPLETION_TARGET_MAP[*DBType]
 	//fmt.Println("checkpoint_completion_target", "=", checkpointCompletionTarget)
@@ -157,15 +160,12 @@ func main() {
 	var walBuffersValue int
 	// Follow auto-tuning guideline for wal_buffers added in 9.1, where it's
 	// set to 3% of shared_buffers up to a maximum of 16MB.
-	walBuffersValue = 3 * sharedBuffers / 100
-	maxWalBuffer := 16 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]
+	walBuffersValue = (3 * sharedBuffers) / 100
+	maxWalBuffer := (16 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"]
 	if walBuffersValue > maxWalBuffer {
 		walBuffersValue = maxWalBuffer
 	}
-	// It's great for wal_buffers to be 16MB if it's near that number. Since
-	// that is a common case on Windows, where shared_buffers is clipped to 512MB,
-	// round upwards in that situation
-	walBufferNearValue := 14 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]
+	walBufferNearValue := (14 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"]
 	if walBuffersValue > walBufferNearValue && walBuffersValue < maxWalBuffer {
 		walBuffersValue = maxWalBuffer
 	}
@@ -177,11 +177,11 @@ func main() {
 
 	var defaultStatisticsTarget int
 	DEFAULT_STATISTICS_TARGET_MAP := map[string]int {
-		DB_TYPE_WEB:     100,
-		DB_TYPE_OLTP:    100,
-		DB_TYPE_DW:      500,
 		DB_TYPE_DESKTOP: 100,
+		DB_TYPE_DW:      500,
 		DB_TYPE_MIXED:   100,
+		DB_TYPE_OLTP:    100,
+		DB_TYPE_WEB:     100,
 	}
 	defaultStatisticsTarget = DEFAULT_STATISTICS_TARGET_MAP[*DBType]
 	//fmt.Println("default_statistics_target", "=", defaultStatisticsTarget)
@@ -189,8 +189,8 @@ func main() {
 	var randomPageCost float32
 	RANDOM_PAGE_COST_MAP := map[string]float32 {
 		HARD_DRIVE_HDD: 4,
-		HARD_DRIVE_SSD: 1.1,
 		HARD_DRIVE_SAN: 1.1,
+		HARD_DRIVE_SSD: 1.1,
 	}
 	randomPageCost = RANDOM_PAGE_COST_MAP[*HDType]
 	//fmt.Println("random_page_cost", "=", randomPageCost)
@@ -198,89 +198,122 @@ func main() {
 	var effectiveIoConcurrency float32
 	EFFECTIVE_IO_CONCURRENCY := map[string]float32 {
 		HARD_DRIVE_HDD: 2,
-		HARD_DRIVE_SSD: 200,
 		HARD_DRIVE_SAN: 300,
+		HARD_DRIVE_SSD: 200,
 	}
+	effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
 
-	if OS_WINDOWS != *OSType {
-		effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
-		fmt.Println("effective_io_concurrency", "=", effectiveIoConcurrency)
-	}
+	//if OS_WINDOWS != *OSType {
+	//	effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
+	//	fmt.Println("effective_io_concurrency", "=", effectiveIoConcurrency)
+	//}
 
 	var workMemValue int
 	var workMemResult int
 	var workMemBase int
-	if DBVersionFloat >= 9.5 && *CPUNum >= 2 {
+	//if DBVersionFloat >= 9.5 && *CPUNum >= 2 {
+	//	workMemBase = *CPUNum / 2
+	//} else {
+	//	workMemBase = 1
+	//}
+	if *CPUNum >= 2 {
 		workMemBase = *CPUNum / 2
 	} else {
 		workMemBase = 1
 	}
-	// work_mem is assigned any time a query calls for a sort, or a hash, or any other structure that needs a space allocation, which can happen multiple times per query. So you're better off assuming max_connections * 2 or max_connections * 3 is the amount of RAM that will actually use in reality. At the very least, you need to subtract shared_buffers from the amount you're distributing to connections in work_mem.
-	// The other thing to consider is that there's no reason to run on the edge of available memory. If you do that, there's a very high risk the out-of-memory killer will come along and start killing PostgreSQL backends. Always leave a buffer of some kind in case of spikes in memory usage. So your maximum amount of memory available in work_mem should be ((RAM - shared_buffers) / (max_connections * 3) / max_parallel_workers_per_gather).
-	workMemValue = (totalMemoryInKb - sharedBuffers) / (FinalConnectionNum * 3) / workMemBase
-
+	// work_mem is assigned any time a query calls for a sort, or a hash, or any other structure that needs a space allocation,
+	// which can happen multiple times per query. So you're better off assuming max_connections * 2 or max_connections * 3
+	// is the amount of RAM that will actually be used in reality. At the very least, you need to subtract shared_buffers from the amount
+	// you're distributing to connections in work_mem.
+	// The other thing to consider is that there's no reason to run on the edge of available memory. If you do that,
+	// there's a high risk the out-of-memory killer will come along and start killing PostgreSQL backends.
+	// Always leave a buffer of some kind in case of spikes in memory usage. So your maximum amount of memory available
+	// in work_mem should be ((RAM - shared_buffers) / (max_connections * 3)) / max_parallel_workers_per_gather.
+	workMemValue = ((totalMemoryInKb - sharedBuffers) / (FinalConnectionNum * 3)) / workMemBase
 	WORK_MEM_MAP := map[string]int {
-		DB_TYPE_WEB:     workMemValue,
-		DB_TYPE_OLTP:    workMemValue,
-		DB_TYPE_DW:      workMemValue / 2,
 		DB_TYPE_DESKTOP: workMemValue / 6,
+		DB_TYPE_DW:      workMemValue / 2,
 		DB_TYPE_MIXED:   workMemValue / 2,
+		DB_TYPE_OLTP:    workMemValue,
+		DB_TYPE_WEB:     workMemValue,
 	}
 	workMemResult = WORK_MEM_MAP[*DBType]
-	// if less, than 64 kb, than set it to minimum
+	// if less than 64 kb, than set it to minimum
 	if workMemResult < 64 {
 		workMemResult = 64
 	}
 	//fmt.Println("work_mem", "=", byteSize(workMemResult))
 
-	if DBVersionFloat < 9.5 {
-		CHECKPOINT_SEGMENTS_MAP := map[string]int{
-			DB_TYPE_WEB:     32,
-			DB_TYPE_OLTP:    64,
-			DB_TYPE_DW:      128,
-			DB_TYPE_DESKTOP: 3,
-			DB_TYPE_MIXED:   32,
-		}
-		fmt.Println("checkpoint_segments", "=", CHECKPOINT_SEGMENTS_MAP[*DBType])
-	} else {
-		MIN_WAL_SIZE_MAP := map[string]int {
-			DB_TYPE_WEB:     (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_OLTP:    (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_DW:      (4096 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_DESKTOP: (100 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_MIXED:   (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-		}
-		fmt.Println("min_wal_size", "=", byteSize(MIN_WAL_SIZE_MAP[*DBType]))
+	//if DBVersionFloat < 9.5 {
+	//	CHECKPOINT_SEGMENTS_MAP := map[string]int{
+	//		DB_TYPE_WEB:     32,
+	//		DB_TYPE_OLTP:    64,
+	//		DB_TYPE_DW:      128,
+	//		DB_TYPE_DESKTOP: 3,
+	//		DB_TYPE_MIXED:   32,
+	//	}
+	//	fmt.Println("checkpoint_segments", "=", CHECKPOINT_SEGMENTS_MAP[*DBType])
+	//} else {
+	//	MIN_WAL_SIZE_MAP := map[string]int {
+	//		DB_TYPE_WEB:     (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_OLTP:    (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_DW:      (4096 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_DESKTOP: (100 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_MIXED:   (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//	}
+	//	fmt.Println("min_wal_size", "=", byteSize(MIN_WAL_SIZE_MAP[*DBType]))
 
-		MAX_WAL_SIZE_MAP := map[string]int {
-			DB_TYPE_WEB:     (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_OLTP:    (4096 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_DW:      (8192 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_DESKTOP: (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-			DB_TYPE_MIXED:   (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
-		}
-		fmt.Println("max_wal_size", "=", byteSize(MAX_WAL_SIZE_MAP[*DBType]))
+	//	MAX_WAL_SIZE_MAP := map[string]int {
+	//		DB_TYPE_WEB:     (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_OLTP:    (4096 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_DW:      (8192 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_DESKTOP: (1024 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//		DB_TYPE_MIXED:   (2048 * SIZE_UNIT_MAP["MB"] / SIZE_UNIT_MAP["KB"]),
+	//	}
+	//	fmt.Println("max_wal_size", "=", byteSize(MAX_WAL_SIZE_MAP[*DBType]))
+	//}
+
+	MIN_WAL_SIZE_MAP := map[string]int {
+		DB_TYPE_DESKTOP: (100 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (4096 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
 	}
+	//fmt.Println("min_wal_size", "=", byteSize(MIN_WAL_SIZE_MAP[*DBType]))
 
-	if DBVersionFloat >= 9.5 && *CPUNum >= 2 {
-		fmt.Println("max_worker_processes", "=", *CPUNum)
-
-		if DBVersionFloat >= 9.6 {
-			fmt.Println("max_parallel_workers_per_gather", "=", *CPUNum/2)
-		}
-
-		if DBVersionFloat >= 10 {
-			fmt.Println("max_parallel_workers", "=", *CPUNum)
-		}
+	MAX_WAL_SIZE_MAP := map[string]int {
+		DB_TYPE_DESKTOP: (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (8192 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (4096 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
 	}
+	//fmt.Println("max_wal_size", "=", byteSize(MAX_WAL_SIZE_MAP[*DBType]))
 
-	//fmt.Println("max_connections", "=", FinalConnectionNum)
-	//fmt.Println("shared_buffers", "=", byteSize(sharedBuffers))
-	fmt.Println("effective_cache_size", "=", byteSize(effectiveCacheSize))
-	//fmt.Println("maintenance_work_mem", "=", byteSize(maintenanceWorkMem))
+	//if DBVersionFloat >= 9.5 && *CPUNum >= 2 {
+	//	fmt.Println("max_worker_processes", "=", *CPUNum)
+
+	//	if DBVersionFloat >= 9.6 {
+	//		fmt.Println("max_parallel_workers_per_gather", "=", *CPUNum/2)
+	//	}
+
+	//	if DBVersionFloat >= 10 {
+	//		fmt.Println("max_parallel_workers", "=", *CPUNum)
+	//	}
+	//}
+
 	fmt.Println("checkpoint_completion_target", "=", checkpointCompletionTarget)
-	//fmt.Println("wal_buffers", "=", byteSize(walBuffersValue))
 	fmt.Println("default_statistics_target", "=", defaultStatisticsTarget)
+	fmt.Println("effective_cache_size", "=", byteSize(effectiveCacheSize))
+	fmt.Println("effective_io_concurrency", "=", effectiveIoConcurrency)
+	fmt.Println("maintenance_work_mem", "=", byteSize(maintenanceWorkMem))
+	fmt.Println("max_connections", "=", FinalConnectionNum)
+	fmt.Println("max_parallel_workers", "=", *CPUNum)
+	fmt.Println("max_wal_size", "=", byteSize(MAX_WAL_SIZE_MAP[*DBType]))
+	fmt.Println("min_wal_size", "=", byteSize(MIN_WAL_SIZE_MAP[*DBType]))
 	fmt.Println("random_page_cost", "=", randomPageCost)
-	//fmt.Println("work_mem", "=", byteSize(workMemResult))
+	fmt.Println("shared_buffers", "=", byteSize(sharedBuffers))
+	fmt.Println("wal_buffers", "=", byteSize(walBuffersValue))
+	fmt.Println("work_mem", "=", byteSize(workMemResult))
 }

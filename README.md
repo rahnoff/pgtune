@@ -1,1 +1,1 @@
-# pgtune
+# PgTune rewritten in Go
