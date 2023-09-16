@@ -11,7 +11,7 @@ const (
 	DB_TYPE_MIXED      = "mixed"
 	DB_TYPE_OLTP       = "oltp"
 	DB_TYPE_WEB        = "web"
-	DEFAULT_DB_VERSION = "11"
+	DEFAULT_DB_VERSION = "15"
 	HARD_DRIVE_HDD     = "hdd"
 	HARD_DRIVE_SAN     = "san"
 	HARD_DRIVE_SSD     = "ssd"
@@ -20,7 +20,7 @@ const (
 	SIZE_UNIT_MB       = "MB"
 )
 
-var DB_VERSIONS = []string{DEFAULT_DB_VERSION, "9.6", "9.5", "9.4", "9.3", "9.2"}
+var DB_VERSIONS = []string{DEFAULT_DB_VERSION, "14", "13", "12", "11"}
 
 func byteSize(size int) string {
 	var result int
@@ -120,30 +120,31 @@ func main() {
 	}
 	maintenanceWorkMem = MAINTENANCE_WORK_MEM_MAP[*DBType]
 	// Cap maintenance RAM at 2 GB on servers with lots of memory
-	memoryLimit := (2 * SIZE_UNIT_MAP["GB"]) / SIZE_UNIT_MAP["KB"]
+	memoryLimit := (SIZE_UNIT_MAP["GB"] * 2) / SIZE_UNIT_MAP["KB"]
 	if maintenanceWorkMem > memoryLimit {
 		maintenanceWorkMem = memoryLimit
 	}
 
 	var checkpointCompletionTarget float32
-	CHECKPOINT_COMPLETION_TARGET_MAP := map[string]float32 {
-		DB_TYPE_DESKTOP: 0.5,
-		DB_TYPE_DW:      0.9,
-		DB_TYPE_MIXED:   0.9,
-		DB_TYPE_OLTP:    0.9,
-		DB_TYPE_WEB:     0.7,
-	}
-	checkpointCompletionTarget = CHECKPOINT_COMPLETION_TARGET_MAP[*DBType]
+	//CHECKPOINT_COMPLETION_TARGET_MAP := map[string]float32 {
+	//	DB_TYPE_DESKTOP: 0.5,
+	//	DB_TYPE_DW:      0.9,
+	//	DB_TYPE_MIXED:   0.9,
+	//	DB_TYPE_OLTP:    0.9,
+	//	DB_TYPE_WEB:     0.7,
+	//}
+	//checkpointCompletionTarget = CHECKPOINT_COMPLETION_TARGET_MAP[*DBType]
+	checkpointCompletionTarget = 0.9
 
 	var walBuffersValue int
 	// Follow auto-tuning guideline for wal_buffers added in 9.1, where it's
 	// set to 3% of shared_buffers up to a maximum of 16 MB.
-	walBuffersValue = (3 * sharedBuffers) / 100
-	maxWalBuffer := (16 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"]
+	walBuffersValue = (sharedBuffers * 3) / 100
+	maxWalBuffer := (SIZE_UNIT_MAP["MB"] * 16) / SIZE_UNIT_MAP["KB"]
 	if walBuffersValue > maxWalBuffer {
 		walBuffersValue = maxWalBuffer
 	}
-	walBufferNearValue := (14 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"]
+	walBufferNearValue := (SIZE_UNIT_MAP["MB"] * 14) / SIZE_UNIT_MAP["KB"]
 	if walBuffersValue > walBufferNearValue && walBuffersValue < maxWalBuffer {
 		walBuffersValue = maxWalBuffer
 	}
@@ -209,19 +210,19 @@ func main() {
 	}
 
 	MIN_WAL_SIZE_MAP := map[string]int {
-		DB_TYPE_DESKTOP: (100 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_DW:      (4096 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_MIXED:   (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_OLTP:    (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_WEB:     (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 100) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
 	}
 
 	MAX_WAL_SIZE_MAP := map[string]int {
-		DB_TYPE_DESKTOP: (1024 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_DW:      (8192 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_MIXED:   (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_OLTP:    (4096 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_WEB:     (2048 * SIZE_UNIT_MAP["MB"]) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 16384) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 8192) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
 	}
 
 	fmt.Println("checkpoint_completion_target", "=", checkpointCompletionTarget)
