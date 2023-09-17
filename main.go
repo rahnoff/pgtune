@@ -15,7 +15,6 @@ const (
 	HARD_DRIVE_HDD     = "hdd"
 	HARD_DRIVE_SAN     = "san"
 	HARD_DRIVE_SSD     = "ssd"
-	//OS_LINUX           = "Linux"
 	SIZE_UNIT_GB       = "GB"
 	SIZE_UNIT_MB       = "MB"
 )
@@ -50,7 +49,6 @@ func main() {
 	DBType := flag.String("dbType", DB_TYPE_WEB, "What type of application PostgreSQL is installed for")
 	DBVersion := flag.String("dbVersion", DEFAULT_DB_VERSION, "PostgreSQL version - can be found out via 'SELECT version();'")
 	HDType := flag.String("hdType", HARD_DRIVE_SSD, "Type of data storage device")
-	//OSType := flag.String("osType", OS_LINUX, "Operating system of the PostgreSQL server host")
 	TotalMemory := flag.Int("totalMemory", 0, "How much memory can PostgreSQL take advantage of")
 	TotalMemoryUnit := flag.String("totalMemoryUnit", SIZE_UNIT_GB, "Memory unit")
 	flag.Parse()
@@ -77,8 +75,8 @@ func main() {
 	var FinalConnectionNum int
 	if *ConnectionNum < 1 {
 		CONNECTION_NUM_MAP := map[string]int {
-			DB_TYPE_DESKTOP: 10,
-			DB_TYPE_DW:      20,
+			DB_TYPE_DESKTOP: 20,
+			DB_TYPE_DW:      40,
 			DB_TYPE_MIXED:   100,
 			DB_TYPE_OLTP:    300,
 			DB_TYPE_WEB:     200,
@@ -125,16 +123,7 @@ func main() {
 		maintenanceWorkMem = memoryLimit
 	}
 
-	var checkpointCompletionTarget float32
-	//CHECKPOINT_COMPLETION_TARGET_MAP := map[string]float32 {
-	//	DB_TYPE_DESKTOP: 0.5,
-	//	DB_TYPE_DW:      0.9,
-	//	DB_TYPE_MIXED:   0.9,
-	//	DB_TYPE_OLTP:    0.9,
-	//	DB_TYPE_WEB:     0.7,
-	//}
-	//checkpointCompletionTarget = CHECKPOINT_COMPLETION_TARGET_MAP[*DBType]
-	checkpointCompletionTarget = 0.9
+	checkpointCompletionTarget := 0.9
 
 	var walBuffersValue int
 	// Follow auto-tuning guideline for wal_buffers added in 9.1, where it's
@@ -179,9 +168,11 @@ func main() {
 	}
 	effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
 
-	var workMemValue int
-	var workMemResult int
-	var workMemBase int
+	var (
+		workMemValue int
+		workMemResult int
+		workMemBase int
+	)
 	if *CPUNum >= 2 {
 		workMemBase = *CPUNum / 2
 	} else {
@@ -225,10 +216,18 @@ func main() {
 		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
 	}
 
+	var hugePages string
+	if totalMemoryInKb >= 33554432 {
+		hugePages = "try"
+	} else {
+		hugePages = "off"
+	}
+
 	fmt.Println("checkpoint_completion_target", "=", checkpointCompletionTarget)
 	fmt.Println("default_statistics_target", "=", defaultStatisticsTarget)
 	fmt.Println("effective_cache_size", "=", byteSize(effectiveCacheSize))
 	fmt.Println("effective_io_concurrency", "=", effectiveIoConcurrency)
+	fmt.Println("huge_pages", "=", hugePages)
 	fmt.Println("maintenance_work_mem", "=", byteSize(maintenanceWorkMem))
 	fmt.Println("max_connections", "=", FinalConnectionNum)
 	fmt.Println("max_parallel_workers", "=", *CPUNum)
