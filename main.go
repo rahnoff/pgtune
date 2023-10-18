@@ -19,7 +19,23 @@ const (
 	SIZE_UNIT_MB       = "MB"
 )
 
-var DB_VERSIONS = []string{DEFAULT_DB_VERSION, "14", "13", "12", "11"}
+var (
+	checkpointCompletionTarget = 0.9
+	defaultStatisticsTarget int
+	effectiveCacheSize      int
+	effectiveIoConcurrency  int
+	finalConnectionNum      int
+	hugePages               string
+	maintenanceWorkMem      int
+	maxWalSize              int
+	minWalSize              int
+	randomPageCost          float32
+	sharedBuffers           int
+	walBuffersValue         int
+	workMemBase             int
+	workMemResult           int
+	workMemValue            int
+)
 
 func byteSize(size int) string {
 	var result int
@@ -57,14 +73,6 @@ func main() {
 		fmt.Println("# Connection num:", *ConnectionNum)
 	}
 
-	fmt.Println("# CPUs num:", *CPUNum)
-	fmt.Println("# Data Storage:", *HDType)
-	fmt.Println("# DB Type:", *DBType)
-	fmt.Println("# DB Version:", *DBVersion)
-	fmt.Println("# OS Type:", "Linux")
-	fmt.Println("# Total Memory (RAM):", *TotalMemory, *TotalMemoryUnit)
-	fmt.Println("")
-
 	SIZE_UNIT_MAP := map[string]int {
 		"KB": 1024,
 		"MB": 1048576,
@@ -72,33 +80,18 @@ func main() {
 		"TB": 1099511627776,
 	}
 
-	var FinalConnectionNum int
-	if *ConnectionNum < 1 {
-		CONNECTION_NUM_MAP := map[string]int {
-			DB_TYPE_DESKTOP: 20,
-			DB_TYPE_DW:      40,
-			DB_TYPE_MIXED:   100,
-			DB_TYPE_OLTP:    300,
-			DB_TYPE_WEB:     200,
-		}
-		FinalConnectionNum = CONNECTION_NUM_MAP[*DBType]
-	} else {
-		FinalConnectionNum = *ConnectionNum
-	}
-
 	totalMemoryInBytes := *TotalMemory * SIZE_UNIT_MAP[*TotalMemoryUnit]
 	totalMemoryInKb := totalMemoryInBytes / SIZE_UNIT_MAP["KB"]
-	var sharedBuffers int
-	SHARED_BUFFERS_VALUE_MAP := map[string]int {
-		DB_TYPE_DESKTOP: totalMemoryInKb / 16,
-		DB_TYPE_DW:      totalMemoryInKb / 4,
-		DB_TYPE_MIXED:   totalMemoryInKb / 4,
-		DB_TYPE_OLTP:    totalMemoryInKb / 4,
-		DB_TYPE_WEB:     totalMemoryInKb / 4,
-	}
-	sharedBuffers = SHARED_BUFFERS_VALUE_MAP[*DBType]
 
-	var effectiveCacheSize int
+	DEFAULT_STATISTICS_TARGET_MAP := map[string]int {
+		DB_TYPE_DESKTOP: 100,
+		DB_TYPE_DW:      500,
+		DB_TYPE_MIXED:   100,
+		DB_TYPE_OLTP:    100,
+		DB_TYPE_WEB:     100,
+	}
+	defaultStatisticsTarget = DEFAULT_STATISTICS_TARGET_MAP[*DBType]
+
 	EFFECTIVE_CACHE_SIZE_MAP := map[string]int {
 		DB_TYPE_DESKTOP: totalMemoryInKb / 4,
 		DB_TYPE_DW:      (totalMemoryInKb * 3) / 4,
@@ -108,7 +101,32 @@ func main() {
 	}
 	effectiveCacheSize = EFFECTIVE_CACHE_SIZE_MAP[*DBType]
 
-	var maintenanceWorkMem int
+	EFFECTIVE_IO_CONCURRENCY := map[string]int {
+		HARD_DRIVE_HDD: 2,
+		HARD_DRIVE_SAN: 300,
+		HARD_DRIVE_SSD: 200,
+	}
+	effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
+
+	if *ConnectionNum < 1 {
+		CONNECTION_NUM_MAP := map[string]int {
+			DB_TYPE_DESKTOP: 20,
+			DB_TYPE_DW:      40,
+			DB_TYPE_MIXED:   100,
+			DB_TYPE_OLTP:    300,
+			DB_TYPE_WEB:     200,
+		}
+		finalConnectionNum = CONNECTION_NUM_MAP[*DBType]
+	} else {
+		finalConnectionNum = *ConnectionNum
+	}
+
+	if totalMemoryInKb >= 33554432 {
+		hugePages = "try"
+	} else {
+		hugePages = "off"
+	}
+
 	MAINTENANCE_WORK_MEM_MAP := map[string]int {
 		DB_TYPE_DESKTOP: totalMemoryInKb / 16,
 		DB_TYPE_DW:      totalMemoryInKb / 8,
@@ -123,9 +141,40 @@ func main() {
 		maintenanceWorkMem = memoryLimit
 	}
 
-	checkpointCompletionTarget := 0.9
+	MIN_WAL_SIZE_MAP := map[string]int {
+		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 100) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
+	}
+	minWalSize = MIN_WAL_SIZE_MAP[*DBType]
 
-	var walBuffersValue int
+	MAX_WAL_SIZE_MAP := map[string]int {
+		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 16384) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 8192) / SIZE_UNIT_MAP["KB"],
+		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
+	}
+	maxWalSize = MAX_WAL_SIZE_MAP[*DBType]
+
+	RANDOM_PAGE_COST_MAP := map[string]float32 {
+		HARD_DRIVE_HDD: 4,
+		HARD_DRIVE_SAN: 1.1,
+		HARD_DRIVE_SSD: 1.1,
+	}
+	randomPageCost = RANDOM_PAGE_COST_MAP[*HDType]
+
+	SHARED_BUFFERS_MAP := map[string]int {
+		DB_TYPE_DESKTOP: totalMemoryInKb / 16,
+		DB_TYPE_DW:      totalMemoryInKb / 4,
+		DB_TYPE_MIXED:   totalMemoryInKb / 4,
+		DB_TYPE_OLTP:    totalMemoryInKb / 4,
+		DB_TYPE_WEB:     totalMemoryInKb / 4,
+	}
+	sharedBuffers = SHARED_BUFFERS_MAP[*DBType]
+
 	// Follow auto-tuning guideline for wal_buffers added in 9.1, where it's
 	// set to 3% of shared_buffers up to a maximum of 16 MB.
 	walBuffersValue = (sharedBuffers * 3) / 100
@@ -142,42 +191,12 @@ func main() {
 		walBuffersValue = 32
 	}
 
-	var defaultStatisticsTarget int
-	DEFAULT_STATISTICS_TARGET_MAP := map[string]int {
-		DB_TYPE_DESKTOP: 100,
-		DB_TYPE_DW:      500,
-		DB_TYPE_MIXED:   100,
-		DB_TYPE_OLTP:    100,
-		DB_TYPE_WEB:     100,
-	}
-	defaultStatisticsTarget = DEFAULT_STATISTICS_TARGET_MAP[*DBType]
-
-	var randomPageCost float32
-	RANDOM_PAGE_COST_MAP := map[string]float32 {
-		HARD_DRIVE_HDD: 4,
-		HARD_DRIVE_SAN: 1.1,
-		HARD_DRIVE_SSD: 1.1,
-	}
-	randomPageCost = RANDOM_PAGE_COST_MAP[*HDType]
-
-	var effectiveIoConcurrency float32
-	EFFECTIVE_IO_CONCURRENCY := map[string]float32 {
-		HARD_DRIVE_HDD: 2,
-		HARD_DRIVE_SAN: 300,
-		HARD_DRIVE_SSD: 200,
-	}
-	effectiveIoConcurrency = EFFECTIVE_IO_CONCURRENCY[*HDType]
-
-	var (
-		workMemValue int
-		workMemResult int
-		workMemBase int
-	)
 	if *CPUNum >= 2 {
 		workMemBase = *CPUNum / 2
 	} else {
 		workMemBase = 1
 	}
+
 	// work_mem is assigned any time a query calls for a sort, or a hash, or any other structure that needs a space allocation,
 	// which can happen multiple times per query. So you're better off assuming max_connections * 2 or max_connections * 3
 	// is the amount of RAM that will actually be used. At the very least, you need to subtract shared_buffers from the amount
@@ -186,7 +205,7 @@ func main() {
 	// there's a high risk the out-of-memory killer will come along and start killing PostgreSQL backends.
 	// Always leave a buffer of some kind in case of spikes in memory usage. So your maximum amount of memory available
 	// in work_mem should be ((RAM - shared_buffers) / (max_connections * 3)) / max_parallel_workers_per_gather.
-	workMemValue = ((totalMemoryInKb - sharedBuffers) / (FinalConnectionNum * 3)) / workMemBase
+	workMemValue = ((totalMemoryInKb - sharedBuffers) / (finalConnectionNum * 3)) / workMemBase
 	WORK_MEM_MAP := map[string]int {
 		DB_TYPE_DESKTOP: workMemValue / 6,
 		DB_TYPE_DW:      workMemValue / 2,
@@ -200,28 +219,13 @@ func main() {
 		workMemResult = 64
 	}
 
-	MIN_WAL_SIZE_MAP := map[string]int {
-		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 100) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 1024) / SIZE_UNIT_MAP["KB"],
-	}
-
-	MAX_WAL_SIZE_MAP := map[string]int {
-		DB_TYPE_DESKTOP: (SIZE_UNIT_MAP["MB"] * 2048) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_DW:      (SIZE_UNIT_MAP["MB"] * 16384) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_MIXED:   (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_OLTP:    (SIZE_UNIT_MAP["MB"] * 8192) / SIZE_UNIT_MAP["KB"],
-		DB_TYPE_WEB:     (SIZE_UNIT_MAP["MB"] * 4096) / SIZE_UNIT_MAP["KB"],
-	}
-
-	var hugePages string
-	if totalMemoryInKb >= 33554432 {
-		hugePages = "try"
-	} else {
-		hugePages = "off"
-	}
+	fmt.Println("# CPUs num:", *CPUNum)
+	fmt.Println("# Data Storage:", *HDType)
+	fmt.Println("# DB Type:", *DBType)
+	fmt.Println("# DB Version:", *DBVersion)
+	fmt.Println("# OS Type:", "Linux")
+	fmt.Println("# Total Memory (RAM):", *TotalMemory, *TotalMemoryUnit)
+	fmt.Println("")
 
 	fmt.Println("checkpoint_completion_target", "=", checkpointCompletionTarget)
 	fmt.Println("default_statistics_target", "=", defaultStatisticsTarget)
@@ -229,10 +233,10 @@ func main() {
 	fmt.Println("effective_io_concurrency", "=", effectiveIoConcurrency)
 	fmt.Println("huge_pages", "=", hugePages)
 	fmt.Println("maintenance_work_mem", "=", byteSize(maintenanceWorkMem))
-	fmt.Println("max_connections", "=", FinalConnectionNum)
+	fmt.Println("max_connections", "=", finalConnectionNum)
 	fmt.Println("max_parallel_workers", "=", *CPUNum)
-	fmt.Println("max_wal_size", "=", byteSize(MAX_WAL_SIZE_MAP[*DBType]))
-	fmt.Println("min_wal_size", "=", byteSize(MIN_WAL_SIZE_MAP[*DBType]))
+	fmt.Println("max_wal_size", "=", byteSize(maxWalSize))
+	fmt.Println("min_wal_size", "=", byteSize(minWalSize))
 	fmt.Println("random_page_cost", "=", randomPageCost)
 	fmt.Println("shared_buffers", "=", byteSize(sharedBuffers))
 	fmt.Println("wal_buffers", "=", byteSize(walBuffersValue))
